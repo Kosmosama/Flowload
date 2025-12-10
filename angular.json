@@ -6,18 +6,15 @@
   },
   "newProjectRoot": "projects",
   "projects": {
-    "fe": {
+    "flowload-temp": {
       "projectType": "application",
       "schematics": {
         "@schematics/angular:component": {
           "style": "scss",
-          "standalone": false
+          "skipTests": true
         },
-        "@schematics/angular:directive": {
-          "standalone": false
-        },
-        "@schematics/angular:pipe": {
-          "standalone": false
+        "@schematics/angular:service": {
+          "skipTests": true
         }
       },
       "root": "",
@@ -36,9 +33,7 @@
                 "input": "public"
               }
             ],
-            "styles": [
-              "src/styles.scss"
-            ]
+            "styles": ["src/styles.scss"]
           },
           "configurations": {
             "production": {
@@ -54,7 +49,7 @@
                   "maximumError": "8kB"
                 }
               ],
-              "outputHashing": "none"
+              "outputHashing": "all"
             },
             "development": {
               "optimization": false,
@@ -68,10 +63,10 @@
           "builder": "@angular/build:dev-server",
           "configurations": {
             "production": {
-              "buildTarget": "fe:build:production"
+              "buildTarget": "flowload-temp:build:production"
             },
             "development": {
-              "buildTarget": "fe:build:development"
+              "buildTarget": "flowload-temp:build:development"
             }
           },
           "defaultConfiguration": "development"

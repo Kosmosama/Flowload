@@ -1,11 +1,12 @@
 import { Component, signal } from '@angular/core';
+import { RouterOutlet } from '@angular/router';
 
 @Component({
   selector: 'app-root',
+  imports: [RouterOutlet],
   templateUrl: './app.html',
-  standalone: false,
   styleUrl: './app.scss'
 })
 export class App {
-  protected readonly title = signal('fe');
+  protected readonly title = signal('flowload-temp');
 }
