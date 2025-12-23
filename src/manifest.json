@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Flowload",
+  "description": "tbd",
+  "version": "1.0",
+  "permissions": ["activeTab", "storage"],
+  "action": {
+    "default_popup": "index.html",
+    "default_icon": "./assets/icons/icon128.png"
+  },
+  "icons": {
+    "16": "./assets/icons/icon16.png",
+    "32": "./assets/icons/icon32.png",
+    "48": "./assets/icons/icon48.png",
+    "128": "./assets/icons/icon128.png"
+  }
+}
