@@ -3,7 +3,6 @@ import { Component, OnDestroy, OnInit, signal } from '@angular/core';
 declare const chrome: any;
 
 type PendingDownload = {
-	downloadId: number;
 	filename: string;
 	extension: string;
 	targetPath: string;
@@ -55,7 +54,7 @@ export class App implements OnInit, OnDestroy {
 				}
 
 				chrome.runtime.sendMessage(
-					{ type: 'flowload.proceedDownload', downloadId: item.downloadId },
+					{ type: 'flowload.proceedDownload', url: item.url, targetPath: item.targetPath },
 					(response: any) => {
 						const lastError = chrome.runtime?.lastError;
 						if (lastError) {
@@ -63,12 +62,12 @@ export class App implements OnInit, OnDestroy {
 							return;
 						}
 						if (response?.ok) resolve();
-						else reject(new Error('Unexpected response from background'));
+						else reject(new Error(response?.error || 'Unexpected response from background'));
 					}
 				);
 			});
 
-			this.status.set('Download resumed. You can close this window.');
+			this.status.set('Download started. You can close this window.');
 			setTimeout(() => window.close(), 800);
 		} catch (err: any) {
 			this.status.set(err?.message || 'Failed to resume download');

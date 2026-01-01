@@ -1,5 +1,5 @@
 const PENDING_KEY = 'pendingDownload';
-const WINDOW_STATE_KEY = 'pendingDownloadWindow';
+const SKIP_IDS = new Set(); // IDs we spawned ourselves to avoid re-intercepting
 
 function extractExtension(filename) {
   if (!filename) return '';
@@ -13,89 +13,68 @@ async function setPendingDownload(info) {
 }
 
 async function clearPendingDownload() {
-  await chrome.storage.local.remove([PENDING_KEY, WINDOW_STATE_KEY]);
+  await chrome.storage.local.remove([PENDING_KEY]);
 }
 
 async function openConfirmationWindow() {
-  const existing = await chrome.storage.local.get(WINDOW_STATE_KEY);
-  if (existing?.[WINDOW_STATE_KEY]?.windowId) {
-    try {
-      const win = await chrome.windows.get(existing[WINDOW_STATE_KEY].windowId);
-      if (win) {
-        if (win.state === 'minimized') {
-          await chrome.windows.update(win.id, { focused: true, state: 'normal' });
-        } else {
-          await chrome.windows.update(win.id, { focused: true });
-        }
-        return;
-      }
-    } catch (err) {
-      // window not found; fall through to create a new one
-    }
-  }
-
-  const created = await chrome.windows.create({
-    url: chrome.runtime.getURL('index.html'),
-    type: 'popup',
-    width: 420,
-    height: 420
-  });
-
-  if (created?.id) {
-    await chrome.storage.local.set({ [WINDOW_STATE_KEY]: { windowId: created.id } });
+  try {
+    await chrome.action.openPopup();
+  } catch (err) {
+    // openPopup can fail if the popup is disabled or the action is hidden; no alternative in that case
   }
 }
 
-chrome.downloads.onCreated.addListener(async (item) => {
-  try {
-    await chrome.downloads.pause(item.id);
-  } catch (err) {
-    // If we fail to pause (e.g., not in progress yet), proceed anyway.
+chrome.downloads.onDeterminingFilename.addListener(async (item, suggest) => {
+  // If this is a download we re-launched after approval, let it continue.
+  if (SKIP_IDS.has(item.id)) {
+    SKIP_IDS.delete(item.id);
+    suggest({ filename: item.filename, conflictAction: 'uniquify' });
+    return;
   }
 
   const pendingInfo = {
-    downloadId: item.id,
-    url: item.url,
+    url: item.finalUrl || item.url,
     filename: item.filename || '',
     extension: extractExtension(item.filename || ''),
     targetPath: item.filename || '',
-    state: 'waiting',
     createdAt: Date.now()
   };
 
   await setPendingDownload(pendingInfo);
   await openConfirmationWindow();
-});
 
-chrome.downloads.onDeterminingFilename.addListener(async (item, suggest) => {
-  const updated = {
-    downloadId: item.id,
-    url: item.finalUrl || item.url,
-    filename: item.filename,
-    extension: extractExtension(item.filename),
-    targetPath: item.filename,
-    state: 'waiting',
-    createdAt: Date.now()
-  };
+  // Cancel the original download so nothing proceeds until user approves.
+  try {
+    await chrome.downloads.cancel(item.id);
+  } catch (err) {
+    // If cancel fails (rare), we still tried; nothing else to do.
+  }
 
-  await setPendingDownload(updated);
-
-  // Keep the default suggestion; we only gate via pause/resume.
-  suggest({ filename: item.filename, conflictAction: 'uniquify' });
+  // Cancelled downloads do not need a suggestion.
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message !== 'object') return;
 
-  if (message.type === 'flowload.proceedDownload' && typeof message.downloadId === 'number') {
+  if (message.type === 'flowload.proceedDownload' && message.url) {
     (async () => {
       try {
-        await chrome.downloads.resume(message.downloadId);
+        const options = {
+          url: message.url,
+          filename: message.targetPath || undefined,
+          saveAs: false
+        };
+
+        const newId = await chrome.downloads.download(options);
+        if (typeof newId === 'number') {
+          SKIP_IDS.add(newId);
+        }
+        await clearPendingDownload();
+        sendResponse({ ok: true });
       } catch (err) {
-        // Resume may fail if already in progress; ignore.
+        const msg = err && err.message ? err.message : 'Failed to start download';
+        sendResponse({ ok: false, error: msg });
       }
-      await clearPendingDownload();
-      sendResponse({ ok: true });
     })();
     return true;
   }
@@ -109,9 +88,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-chrome.downloads.onErased.addListener(async (downloadId) => {
-  const data = await chrome.storage.local.get(PENDING_KEY);
-  if (data[PENDING_KEY]?.downloadId === downloadId) {
-    await clearPendingDownload();
-  }
+chrome.downloads.onErased.addListener(async () => {
+  await clearPendingDownload();
 });
