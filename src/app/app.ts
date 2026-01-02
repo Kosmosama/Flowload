@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
 
 declare const chrome: any;
 
@@ -7,6 +7,7 @@ type PendingDownload = {
 	extension: string;
 	targetPath: string;
 	url: string;
+	downloadId?: number;
 };
 
 @Component({
@@ -19,6 +20,14 @@ export class App implements OnInit, OnDestroy {
 	protected pending = signal<PendingDownload | null>(null);
 	protected status = signal('Waiting for a download…');
 	protected busy = signal(false);
+	protected folder = signal('');
+	protected filename = signal('');
+	protected targetPath = computed(() => {
+		const cleanFolder = this.folder().trim().replace(/^\/+|\/+$/g, '');
+		const cleanFile = this.filename().trim();
+		if (cleanFolder && cleanFile) return `${cleanFolder}/${cleanFile}`;
+		return cleanFile || cleanFolder || '';
+	});
 
 	private storageListener = (changes: Record<string, any>, areaName: string) => {
 		if (areaName !== 'local' || !changes['pendingDownload']) return;
@@ -46,6 +55,8 @@ export class App implements OnInit, OnDestroy {
 		this.busy.set(true);
 		this.status.set('Resuming download…');
 
+		const targetPath = this.targetPath() || item.targetPath;
+
 		try {
 			await new Promise<void>((resolve, reject) => {
 				if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
@@ -54,7 +65,7 @@ export class App implements OnInit, OnDestroy {
 				}
 
 				chrome.runtime.sendMessage(
-					{ type: 'flowload.proceedDownload', url: item.url, targetPath: item.targetPath },
+					{ type: 'flowload.proceedDownload', url: item.url, targetPath },
 					(response: any) => {
 						const lastError = chrome.runtime?.lastError;
 						if (lastError) {
@@ -76,6 +87,38 @@ export class App implements OnInit, OnDestroy {
 		}
 	}
 
+	protected async cancel(): Promise<void> {
+		if (!this.pending() || this.busy()) return;
+		this.busy.set(true);
+		this.status.set('Canceling download…');
+
+		try {
+			await new Promise<void>((resolve, reject) => {
+				if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
+					reject(new Error('Chrome extension APIs unavailable'));
+					return;
+				}
+
+				chrome.runtime.sendMessage({ type: 'flowload.cancelDownload' }, (response: any) => {
+					const lastError = chrome.runtime?.lastError;
+					if (lastError) {
+						reject(new Error(lastError.message));
+						return;
+					}
+					if (response?.ok) resolve();
+					else reject(new Error(response?.error || 'Unexpected response from background'));
+				});
+			});
+
+			this.pending.set(null);
+			this.status.set('Download canceled.');
+		} catch (err: any) {
+			this.status.set(err?.message || 'Failed to cancel download');
+		} finally {
+			this.busy.set(false);
+		}
+	}
+
 	protected async reload(): Promise<void> {
 		await this.loadPending();
 	}
@@ -91,6 +134,18 @@ export class App implements OnInit, OnDestroy {
 		const data = await chrome.storage.local.get('pendingDownload');
 		const pending = (data && data['pendingDownload']) || null;
 		this.pending.set(pending);
+
+		if (pending?.targetPath) {
+			const segments = pending.targetPath.split('/');
+			const name = segments.pop() || '';
+			const folder = segments.join('/');
+			this.filename.set(name);
+			this.folder.set(folder);
+		} else {
+			this.filename.set('');
+			this.folder.set('');
+		}
+
 		this.status.set(pending ? 'Ready to proceed' : 'No pending download');
 	}
 }

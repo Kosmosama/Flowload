@@ -18,8 +18,26 @@
 			<span class="value">{{ item.extension || '—' }}</span>
 		</div>
 		<div class="row">
+			<span class="label">Folder</span>
+			<input
+				type="text"
+				placeholder="subfolder (optional)"
+				[value]="folder()"
+				(input)="folder.set($any($event.target).value || '')"
+			/>
+		</div>
+		<div class="row">
+			<span class="label">File name</span>
+			<input
+				type="text"
+				placeholder="rename before saving"
+				[value]="filename()"
+				(input)="filename.set($any($event.target).value || '')"
+			/>
+		</div>
+		<div class="row">
 			<span class="label">Will save to</span>
-			<span class="value">{{ item.targetPath || '—' }}</span>
+			<span class="value">{{ targetPath() || item.targetPath || '—' }}</span>
 		</div>
 		<div class="row">
 			<span class="label">Source</span>
@@ -30,6 +48,7 @@
 			<button class="primary" type="button" [disabled]="busy()" (click)="proceed()">
 				{{ busy() ? 'Working…' : 'Proceed with download' }}
 			</button>
+			<button class="ghost" type="button" [disabled]="busy()" (click)="cancel()">Cancel download</button>
 		</div>
 	</section>
 	} @else {

@@ -1,5 +1,6 @@
 const PENDING_KEY = 'pendingDownload';
 const SKIP_IDS = new Set(); // IDs we spawned ourselves to avoid re-intercepting
+const SKIP_TARGETS = new Map(); // Preferred filenames/paths for re-launched downloads
 
 function extractExtension(filename) {
   if (!filename) return '';
@@ -25,10 +26,12 @@ async function openConfirmationWindow() {
 }
 
 chrome.downloads.onDeterminingFilename.addListener(async (item, suggest) => {
-  // If this is a download we re-launched after approval, let it continue.
+  // If this is a download we re-launched after approval, let it continue with the chosen path.
   if (SKIP_IDS.has(item.id)) {
     SKIP_IDS.delete(item.id);
-    suggest({ filename: item.filename, conflictAction: 'uniquify' });
+    const preferred = SKIP_TARGETS.get(item.id) || item.filename;
+    SKIP_TARGETS.delete(item.id);
+    suggest({ filename: preferred, conflictAction: 'uniquify' });
     return;
   }
 
@@ -37,6 +40,7 @@ chrome.downloads.onDeterminingFilename.addListener(async (item, suggest) => {
     filename: item.filename || '',
     extension: extractExtension(item.filename || ''),
     targetPath: item.filename || '',
+    downloadId: item.id,
     createdAt: Date.now()
   };
 
@@ -68,11 +72,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const newId = await chrome.downloads.download(options);
         if (typeof newId === 'number') {
           SKIP_IDS.add(newId);
+          if (options.filename) {
+            SKIP_TARGETS.set(newId, options.filename);
+          }
         }
         await clearPendingDownload();
         sendResponse({ ok: true });
       } catch (err) {
         const msg = err && err.message ? err.message : 'Failed to start download';
+        sendResponse({ ok: false, error: msg });
+      }
+    })();
+    return true;
+  }
+
+  if (message.type === 'flowload.cancelDownload') {
+    (async () => {
+      try {
+        const data = await chrome.storage.local.get(PENDING_KEY);
+        const pending = data[PENDING_KEY];
+        if (pending?.downloadId) {
+          try {
+            await chrome.downloads.cancel(pending.downloadId);
+          } catch (err) {
+            // If the download is already gone, ignore.
+          }
+        }
+        await clearPendingDownload();
+        sendResponse({ ok: true });
+      } catch (err) {
+        const msg = err && err.message ? err.message : 'Failed to cancel download';
         sendResponse({ ok: false, error: msg });
       }
     })();
