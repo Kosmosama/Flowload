@@ -19,12 +19,10 @@
 		</div>
 		<div class="row">
 			<span class="label">Folder</span>
-			<input
-				type="text"
-				placeholder="subfolder (optional)"
-				[value]="folder()"
-				(input)="folder.set($any($event.target).value || '')"
-			/>
+			<div class="field-inline">
+				<input type="text" [value]="folder()" readonly placeholder="Select a folder" />
+				<button class="ghost" type="button" [disabled]="busy()" (click)="chooseFolder()">Choose…</button>
+			</div>
 		</div>
 		<div class="row">
 			<span class="label">File name</span>

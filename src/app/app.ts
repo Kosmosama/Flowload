@@ -65,7 +65,7 @@ export class App implements OnInit, OnDestroy {
 				}
 
 				chrome.runtime.sendMessage(
-					{ type: 'flowload.proceedDownload', url: item.url, targetPath },
+					{ type: 'flowload.proceedDownload', url: item.url, targetPath, saveAs: false },
 					(response: any) => {
 						const lastError = chrome.runtime?.lastError;
 						if (lastError) {
@@ -116,6 +116,32 @@ export class App implements OnInit, OnDestroy {
 			this.status.set(err?.message || 'Failed to cancel download');
 		} finally {
 			this.busy.set(false);
+		}
+	}
+
+	protected async chooseFolder(): Promise<void> {
+		if (this.busy()) return;
+		if (!('showDirectoryPicker' in window)) {
+			this.status.set('Folder picker not supported in this browser');
+			return;
+		}
+
+		try {
+			const handle = await (window as any).showDirectoryPicker();
+			if (handle && handle.name) {
+				this.folder.set(handle.name);
+				if (!this.filename()) {
+					const item = this.pending();
+					this.filename.set(item?.filename || '');
+				}
+			}
+			this.status.set('Folder selected.');
+		} catch (err: any) {
+			if (err?.name === 'AbortError') {
+				this.status.set('Folder selection canceled.');
+				return;
+			}
+			this.status.set(err?.message || 'Failed to choose folder');
 		}
 	}
 

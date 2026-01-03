@@ -47,14 +47,19 @@ chrome.downloads.onDeterminingFilename.addListener(async (item, suggest) => {
   await setPendingDownload(pendingInfo);
   await openConfirmationWindow();
 
-  // Cancel the original download so nothing proceeds until user approves.
+  // Pause the original download so it doesn't proceed before user chooses.
   try {
-    await chrome.downloads.cancel(item.id);
+    await chrome.downloads.pause(item.id);
   } catch (err) {
-    // If cancel fails (rare), we still tried; nothing else to do.
+    // If pausing fails, fall back to cancel to avoid proceeding.
+    try {
+      await chrome.downloads.cancel(item.id);
+    } catch (innerErr) {
+      // best effort
+    }
   }
 
-  // Cancelled downloads do not need a suggestion.
+  // We already suggested the original name; if paused, it will not write anything further.
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -63,10 +68,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'flowload.proceedDownload' && message.url) {
     (async () => {
       try {
+        // Clean up the original paused download before starting a new one.
+        const data = await chrome.storage.local.get(PENDING_KEY);
+        const pending = data[PENDING_KEY];
+        if (pending?.downloadId) {
+          try {
+            await chrome.downloads.cancel(pending.downloadId);
+          } catch (err) {
+            // ignore
+          }
+          try {
+            await chrome.downloads.erase({ id: pending.downloadId });
+          } catch (err) {
+            // ignore
+          }
+        }
+
         const options = {
           url: message.url,
           filename: message.targetPath || undefined,
-          saveAs: false
+          saveAs: Boolean(message.saveAs)
         };
 
         const newId = await chrome.downloads.download(options);
@@ -96,6 +117,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             await chrome.downloads.cancel(pending.downloadId);
           } catch (err) {
             // If the download is already gone, ignore.
+          }
+          try {
+            await chrome.downloads.erase({ id: pending.downloadId });
+          } catch (err) {
+            // Best-effort cleanup of the history entry.
           }
         }
         await clearPendingDownload();
